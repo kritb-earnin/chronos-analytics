@@ -99,6 +99,7 @@ function EventRow({ event }: { event: AnalyticsEvent }): React.ReactElement {
 
 export function ChronosDevTools(): React.ReactElement {
   const [events, setEvents] = useState<AnalyticsEvent[]>(() => loadEvents(STORAGE_KEY))
+  const [minimized, setMinimized] = useState(false)
 
   const refresh = useCallback(() => {
     setEvents(loadEvents(STORAGE_KEY))
@@ -123,20 +124,61 @@ export function ChronosDevTools(): React.ReactElement {
     }
   }, [])
 
+  const toggleMinimized = useCallback(() => {
+    setMinimized((prev) => !prev)
+  }, [])
+
   return (
-    <div style={styles.overlay} data-chronos-devtools>
-      <div style={styles.header}>
-        <span style={styles.label}>Chronos — Event log</span>
-        <button type="button" style={styles.button} onClick={refresh}>
-          Refresh
-        </button>
-        <button type="button" style={styles.button} onClick={handleClear}>
-          Clear
-        </button>
-        <span style={{ fontSize: '11px', opacity: 0.9 }}>
+    <div
+      style={{
+        ...styles.overlay,
+        maxHeight: minimized ? undefined : styles.overlay.maxHeight,
+      }}
+      data-chronos-devtools
+    >
+      <div
+        style={{
+          ...styles.header,
+          borderBottom: minimized ? 'none' : styles.header.borderBottom,
+        }}
+        role="button"
+        tabIndex={0}
+        onClick={toggleMinimized}
+        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleMinimized()}
+        title={minimized ? 'Expand event log' : 'Minimize event log'}
+      >
+        <span style={{ ...styles.label, cursor: 'pointer', userSelect: 'none' }}>
+          {minimized ? '▶' : '▼'} Chronos — Event log
+        </span>
+        {!minimized && (
+          <>
+            <button
+              type="button"
+              style={styles.button}
+              onClick={(e) => {
+                e.stopPropagation()
+                refresh()
+              }}
+            >
+              Refresh
+            </button>
+            <button
+              type="button"
+              style={styles.button}
+              onClick={(e) => {
+                e.stopPropagation()
+                handleClear()
+              }}
+            >
+              Clear
+            </button>
+          </>
+        )}
+        <span style={{ fontSize: '11px', opacity: 0.9, marginLeft: 'auto' }}>
           {events.length} event{events.length !== 1 ? 's' : ''}
         </span>
       </div>
+      {!minimized && (
       <div style={styles.list}>
         {events.length === 0 ? (
           <div style={{ ...styles.row, color: '#666' }}>
@@ -148,6 +190,7 @@ export function ChronosDevTools(): React.ReactElement {
           ))
         )}
       </div>
+      )}
     </div>
   )
 }

@@ -18,7 +18,9 @@
   ],
   "scripts": {
     "build": "vite build",
-    "dev": "vite build --watch"
+    "dev": "vite build --watch",
+    "dev:demo1": "cd examples/demo && pnpm dev",
+    "dev:demo2": "cd examples/demo-simple && pnpm dev"
   },
   "peerDependencies": {
     "react": ">=18.0.0",
