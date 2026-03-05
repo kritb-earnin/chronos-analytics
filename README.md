@@ -2,6 +2,130 @@
 
 Event sourcing for the frontend — high-fidelity event tracking and an event log with timestamps. Use with React 18+ and TypeScript. No Redux required.
 
+---
+
+## How it works
+
+### Component diagram
+
+The following diagram shows the main pieces of Chronos and how they connect. Your app components emit events via **useChronos** or **withTracking**; the **EventBus** broadcasts every event to all registered **sinks**. Sinks can log to the console, persist to localStorage, or forward to an external provider (e.g. Segment). **ChronosDevTools** subscribes to the bus for live updates and reads persisted events for the event log. Optionally, **ChronosStore** emits `state_snapshot` events on each state change.
+
+```mermaid
+flowchart TB
+  subgraph app [App layer]
+    Counter[Counter / TodoList etc.]
+  end
+
+  subgraph tracking [Tracking]
+    useChronos[useChronos hook]
+    withTracking[withTracking HOC]
+  end
+
+  subgraph core [Core]
+    EventBus[EventBus singleton]
+  end
+
+  subgraph optional [Optional]
+    ChronosStore[ChronosStore]
+  end
+
+  subgraph sinks [Sinks]
+    ConsoleSink[ConsoleSink]
+    LocalStorageSink[LocalStorageSink]
+    ProviderSink[createProviderSink]
+  end
+
+  subgraph external [External]
+    Segment[Segment / GTM / etc.]
+  end
+
+  subgraph devtools [DevTools]
+    ChronosDevTools[ChronosDevTools]
+    ReplayEngine[ReplayEngine]
+  end
+
+  Counter --> useChronos
+  Counter --> withTracking
+  useChronos --> EventBus
+  withTracking --> EventBus
+  ChronosStore -->|state_snapshot| EventBus
+
+  EventBus --> ConsoleSink
+  EventBus --> LocalStorageSink
+  EventBus --> ProviderSink
+  ProviderSink --> Segment
+
+  LocalStorageSink -->|persisted events| ChronosDevTools
+  EventBus -->|live events| ChronosDevTools
+  ChronosDevTools --> ReplayEngine
+```
+
+### Sequence diagram: bootstrap and emit
+
+**Bootstrap:** The app registers sinks with the EventBus before mounting so every event is captured. **Emit:** When a user interacts (e.g. click), `useChronos().emit()` or `withTracking` calls `emitEvent`; the EventBus notifies all sinks synchronously. Console logs, LocalStorage appends, and the provider sink (if configured) forwards to Segment.
+
+```mermaid
+sequenceDiagram
+  participant Main as main.tsx
+  participant Bus as EventBus
+  participant Console as ConsoleSink
+  participant Local as LocalStorageSink
+  participant Provider as ProviderSink
+  participant Segment as Segment
+  participant App as App / Component
+  participant DevTools as ChronosDevTools
+
+  Note over Main, Bus: Bootstrap (before createRoot)
+  Main->>Bus: getEventBus()
+  Main->>Bus: subscribe(initLocalStorageSink(...))
+  Main->>Bus: subscribe(initConsoleSink(...))
+  Main->>Bus: subscribe(createProviderSink(segmentAdapter))
+  Main->>Main: createRoot().render(<App />)
+
+  Note over App, Segment: User clicks (withTracking or useChronos.emit)
+  App->>Bus: emitEvent(eventName, payload)
+  Bus->>Bus: create AnalyticsEvent (id, timestamp, ...)
+  Bus->>Console: sink(event)
+  Bus->>Local: sink(event)
+  Bus->>Provider: sink(event)
+  Console->>Console: console.log(event)
+  Local->>Local: append to localStorage
+  Provider->>Segment: provider.track(eventName, properties)
+
+  Note over Bus, DevTools: DevTools event log
+  DevTools->>Local: loadEvents(key) on mount + refresh
+  DevTools->>Bus: subscribe(sink) for live events
+  Bus->>DevTools: new event → setState(append)
+  DevTools->>DevTools: render list (timestamp, name, payload)
+```
+
+### Sequence diagram: click event row to highlight source element
+
+When using **withTracking**, each wrapped element gets a `data-chronos-source-id` attribute and events carry `_chronosSourceId` in the payload. Clicking a row in ChronosDevTools looks up the DOM element and temporarily highlights it.
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant DevTools as ChronosDevTools
+  participant DOM as Document
+  participant Element as Tracked element
+
+  User->>DevTools: Clicks event row in event log
+  DevTools->>DevTools: Read _chronosSourceId from event.payload
+  DevTools->>DOM: querySelector('[data-chronos-source-id="<id>"]')
+  DOM-->>DevTools: element (or null)
+  alt element found
+    DevTools->>Element: scrollIntoView({ behavior: 'smooth' })
+    DevTools->>Element: set inline outline + boxShadow (highlight)
+    Note over Element: Highlight visible ~2.5s
+    DevTools->>Element: setTimeout → restore previous style
+  else element not found
+    DevTools->>DevTools: no-op (element removed or no sourceId)
+  end
+```
+
+---
+
 ## Install
 
 ```bash
