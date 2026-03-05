@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react'
-import { useCallback } from 'react'
+import { useCallback, useId } from 'react'
 import { emitEvent } from '../lib/EventBus'
 
 type WithOnClick = {
@@ -19,18 +19,26 @@ export function withTracking<P extends WithOnClick>(
   eventName: string = 'click'
 ): ComponentType<P> {
   function WithTrackingWrapper(props: P) {
+    const sourceId = useId()
     const { onClick, ...rest } = props
     const handleClick = useCallback(
       (e: React.MouseEvent<unknown>) => {
         emitEvent(eventName, {
           target: (e.target as HTMLElement)?.id ?? (e.target as HTMLElement)?.tagName,
+          _chronosSourceId: sourceId,
           ...(typeof rest === 'object' && rest !== null ? (rest as Record<string, unknown>) : {}),
         })
         onClick?.(e as React.MouseEvent<unknown>)
       },
-      [onClick]
+      [onClick, sourceId]
     )
-    return <Component {...(rest as P)} onClick={handleClick} />
+    return (
+      <Component
+        {...(rest as P)}
+        onClick={handleClick}
+        data-chronos-source-id={sourceId}
+      />
+    )
   }
   WithTrackingWrapper.displayName = `WithTracking(${Component.displayName ?? Component.name ?? 'Component'})`
   return WithTrackingWrapper as ComponentType<P>
