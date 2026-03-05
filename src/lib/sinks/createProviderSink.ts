@@ -1,18 +1,24 @@
 import type { AnalyticsEvent, EventSink, IAnalyticsProvider } from '../../types/chronos'
 import { STATE_SNAPSHOT } from '../EventBus'
 
+/**
+ * Options for createProviderSink. state_snapshot is always skipped; use filter to skip other events or mapToTrack to reshape.
+ */
 export interface CreateProviderSinkOptions {
-  /** If false, event is not forwarded to the provider. */
+  /** If provided and returns false, the event is not forwarded to the provider. */
   filter?: (event: AnalyticsEvent) => boolean
-  /** Map event to track call; return null to skip. */
+  /** Map Chronos event to track(eventName, properties); return null to skip this event. */
   mapToTrack?: (
     event: AnalyticsEvent
   ) => { eventName: string; properties: Record<string, unknown> } | null
 }
 
 /**
- * Returns an EventSink that forwards non–state_snapshot Chronos events to the provider.
- * Use: eventBus.subscribe(createProviderSink(segmentAdapter, { filter: (e) => e.eventName !== 'state_snapshot' }))
+ * Create an EventSink that forwards Chronos events to an external analytics provider (e.g. Segment).
+ * state_snapshot events are never forwarded. Subscribe the returned sink: eventBus.subscribe(createProviderSink(provider, options)).
+ * @param provider - Implementation of IAnalyticsProvider (e.g. Segment adapter)
+ * @param options - Optional filter and mapToTrack
+ * @returns EventSink to pass to eventBus.subscribe()
  */
 export function createProviderSink(
   provider: IAnalyticsProvider,

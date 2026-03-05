@@ -1,5 +1,6 @@
 import type { AnalyticsEvent, EventSink } from '../types/chronos'
 
+/** Event name used for state snapshot events emitted by ChronosStore. */
 const STATE_SNAPSHOT = 'state_snapshot'
 
 function createEventId(): string {
@@ -8,8 +9,14 @@ function createEventId(): string {
     : `evt_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
 }
 
+/**
+ * Event bus contract: emit events and subscribe sinks.
+ * All sinks are notified synchronously when an event is emitted.
+ */
 export interface IEventBus {
+  /** Broadcast an event to all subscribed sinks. */
   emit(event: AnalyticsEvent): void
+  /** Subscribe a sink; returns an unsubscribe function. */
   subscribe(sink: EventSink): () => void
 }
 
@@ -35,12 +42,22 @@ class EventBusClass implements IEventBus {
 
 const eventBusInstance = new EventBusClass()
 
-/** Get the singleton EventBus instance. */
+/**
+ * Get the singleton EventBus instance. Use this at app bootstrap to register sinks
+ * (e.g. initConsoleSink, initLocalStorageSink, createProviderSink).
+ * @returns The shared IEventBus instance
+ */
 export function getEventBus(): IEventBus {
   return eventBusInstance
 }
 
-/** Emit a full AnalyticsEvent (e.g. from useChronos). */
+/**
+ * Emit an analytics event to the EventBus; all subscribed sinks receive it.
+ * Used by `useChronos().emit()` and `withTracking`; can also be called directly.
+ * @param eventName - Event name (e.g. 'button_click')
+ * @param payload - Optional payload (keep serializable for replay/localStorage)
+ * @param metadata - Optional metadata
+ */
 export function emitEvent(
   eventName: string,
   payload?: unknown,
@@ -55,7 +72,11 @@ export function emitEvent(
   })
 }
 
-/** Emit a state_snapshot event (used by ChronosStore). */
+/**
+ * Emit a state_snapshot event. Used by ChronosStore after each state change;
+ * appears in the event log like other events. Provider sinks typically filter these out.
+ * @param state - Current store state (serializable)
+ */
 export function emitStateSnapshot(state: unknown): void {
   eventBusInstance.emit({
     id: createEventId(),

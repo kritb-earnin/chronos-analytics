@@ -9,7 +9,10 @@ type WithOnClick = {
 }
 
 /**
- * HOC that intercepts onClick: emits an analytics event, then calls the original onClick.
+ * HOC that wraps a component and intercepts onClick: emits an analytics event (with target and rest props in payload), then calls the original onClick.
+ * @param Component - React component that accepts onClick (and optionally children)
+ * @param eventName - Event name to emit on click (default: `'click'`)
+ * @returns Wrapped component with the same props
  */
 export function withTracking<P extends WithOnClick>(
   Component: ComponentType<P>,

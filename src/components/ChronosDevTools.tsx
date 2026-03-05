@@ -18,6 +18,44 @@ function formatTimestamp(ts: number): string {
 }
 
 const styles: Record<string, React.CSSProperties> = {
+  bubble: {
+    position: 'fixed',
+    bottom: 16,
+    right: 16,
+    width: 48,
+    height: 48,
+    borderRadius: '50%',
+    background: 'rgba(30, 30, 30, 0.95)',
+    border: '1px solid #555',
+    color: '#e0e0e0',
+    cursor: 'pointer',
+    zIndex: 2147483647,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
+  },
+  bubbleIcon: {
+    width: 24,
+    height: 24,
+    fill: 'currentColor',
+  },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    padding: '0 5px',
+    borderRadius: 9,
+    background: '#6b8',
+    color: '#111',
+    fontSize: 11,
+    fontWeight: 700,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   overlay: {
     position: 'fixed',
     bottom: 0,
@@ -97,6 +135,12 @@ function EventRow({ event }: { event: AnalyticsEvent }): React.ReactElement {
   )
 }
 
+/**
+ * Fixed overlay that shows the Chronos event log (timestamp, eventName, payload).
+ * Loads events from localStorage (same key as LocalStorageSink); supports Refresh and Clear.
+ * Renders as a minimizable bubble when collapsed. No state scrubber or play/pause.
+ * @returns React element (overlay or bubble button)
+ */
 export function ChronosDevTools(): React.ReactElement {
   const [events, setEvents] = useState<AnalyticsEvent[]>(() => loadEvents(STORAGE_KEY))
   const [minimized, setMinimized] = useState(false)
@@ -128,57 +172,67 @@ export function ChronosDevTools(): React.ReactElement {
     setMinimized((prev) => !prev)
   }, [])
 
+  if (minimized) {
+    return (
+      <button
+        type="button"
+        style={styles.bubble}
+        onClick={toggleMinimized}
+        title={`Chronos — ${events.length} event${events.length !== 1 ? 's' : ''}. Click to expand.`}
+        aria-label={`Expand event log, ${events.length} events`}
+        data-chronos-devtools
+      >
+        <svg
+          style={styles.bubbleIcon}
+          viewBox="0 0 24 24"
+          aria-hidden
+        >
+          <path d="M4 6h16v2H4V6zm0 5h16v2H4v-2zm0 5h16v2H4v-2z" />
+        </svg>
+        {events.length > 0 && (
+          <span style={styles.badge}>{events.length > 99 ? '99+' : events.length}</span>
+        )}
+      </button>
+    )
+  }
+
   return (
-    <div
-      style={{
-        ...styles.overlay,
-        maxHeight: minimized ? undefined : styles.overlay.maxHeight,
-      }}
-      data-chronos-devtools
-    >
+    <div style={styles.overlay} data-chronos-devtools>
       <div
-        style={{
-          ...styles.header,
-          borderBottom: minimized ? 'none' : styles.header.borderBottom,
-        }}
+        style={styles.header}
         role="button"
         tabIndex={0}
         onClick={toggleMinimized}
         onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleMinimized()}
-        title={minimized ? 'Expand event log' : 'Minimize event log'}
+        title="Minimize to bubble"
       >
         <span style={{ ...styles.label, cursor: 'pointer', userSelect: 'none' }}>
-          {minimized ? '▶' : '▼'} Chronos — Event log
+          ▼ Chronos — Event log
         </span>
-        {!minimized && (
-          <>
-            <button
-              type="button"
-              style={styles.button}
-              onClick={(e) => {
-                e.stopPropagation()
-                refresh()
-              }}
-            >
-              Refresh
-            </button>
-            <button
-              type="button"
-              style={styles.button}
-              onClick={(e) => {
-                e.stopPropagation()
-                handleClear()
-              }}
-            >
-              Clear
-            </button>
-          </>
-        )}
+        <button
+          type="button"
+          style={styles.button}
+          onClick={(e) => {
+            e.stopPropagation()
+            refresh()
+          }}
+        >
+          Refresh
+        </button>
+        <button
+          type="button"
+          style={styles.button}
+          onClick={(e) => {
+            e.stopPropagation()
+            handleClear()
+          }}
+        >
+          Clear
+        </button>
         <span style={{ fontSize: '11px', opacity: 0.9, marginLeft: 'auto' }}>
           {events.length} event{events.length !== 1 ? 's' : ''}
         </span>
       </div>
-      {!minimized && (
       <div style={styles.list}>
         {events.length === 0 ? (
           <div style={{ ...styles.row, color: '#666' }}>
@@ -190,7 +244,6 @@ export function ChronosDevTools(): React.ReactElement {
           ))
         )}
       </div>
-      )}
     </div>
   )
 }

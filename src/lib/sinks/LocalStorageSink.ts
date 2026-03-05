@@ -4,11 +4,22 @@ import type { IEventBus } from '../EventBus'
 const DEFAULT_KEY = 'chronos-events'
 const DEFAULT_MAX_EVENTS = 1000
 
+/**
+ * Options for the LocalStorage sink. Events are appended to an array under the given key and trimmed to maxEvents.
+ */
 export interface LocalStorageSinkOptions {
+  /** localStorage key (default: `'chronos-events'`). */
   key?: string
+  /** Maximum number of events to keep (default: 1000). */
   maxEvents?: number
 }
 
+/**
+ * Subscribe a sink that appends every event to localStorage. Used by ChronosDevTools to show the event log.
+ * @param eventBus - The EventBus from getEventBus()
+ * @param options - Optional key and maxEvents
+ * @returns Unsubscribe function to stop persisting
+ */
 export function init(
   eventBus: IEventBus,
   options: LocalStorageSinkOptions = {}
@@ -32,7 +43,11 @@ export function init(
   return eventBus.subscribe(sink)
 }
 
-/** Load events from localStorage (e.g. for ReplayEngine / DevTools). */
+/**
+ * Load persisted events from localStorage (e.g. for ReplayEngine or ChronosDevTools).
+ * @param storageKey - localStorage key (default: `'chronos-events'`)
+ * @returns Array of events; empty if missing or invalid
+ */
 export function loadEvents(storageKey: string = DEFAULT_KEY): AnalyticsEvent[] {
   if (typeof window === 'undefined') return []
   try {
