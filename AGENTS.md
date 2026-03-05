@@ -6,11 +6,28 @@ This file is the single source of truth for building and evolving the **Chronos*
 
 ## 1. What Chronos Is
 
-- **Chronos** is an NPM library: "Event Sourcing for the Frontend." It provides high-fidelity event tracking and a "Time Machine" replay without Redux.
+- **Chronos** is an NPM library: "Event Sourcing for the Frontend." It provides high-fidelity event tracking and **replay as event logs with timestamps** (no state re-hydration).
 - **Library** (publishable): lives under `src/`, builds to `dist/`. React is a **peerDependency**.
-- **Demo app** (not published): `examples/demo/` — Vite React app that consumes the local package (link or workspace) to verify replay and persistence (Counter + Todo).
+- **Demo app** (not published): `examples/demo/` — Vite React app that consumes the local package (link or workspace) to verify event logging and persistence (Counter + Todo).
 
-**Consumer usage:** `npm i chronos-analytics`. Register sinks (LocalStorageSink, ConsoleSink). To forward to Segment or any provider: implement `IAnalyticsProvider` with an adapter and subscribe `eventBus.subscribe(createProviderSink(segmentAdapter))`. Create store with `createChronosStore(reducer, initialState)`, wrap app with Provider, use `withTracking` on clickables, optionally render ChronosDevTools.
+**Basic use case (recommended):** Use the **`useChronos`** hook in any component to get `emit`. No reducer or store required. Bootstrap once: register sinks (LocalStorageSink, ConsoleSink) and optionally `createProviderSink(segmentAdapter)`. In components: `const { emit } = useChronos(); emit('button_click', { id: 'submit' });` Events flow to the EventBus and all sinks. Use `withTracking` for automatic click events.
+
+**Replay:** Replay means **displaying event logs with timestamps** in ChronosDevTools. It does not mean re-playing state changes or scrubbing the app UI. DevTools shows a list of events (timestamp, eventName, payload); events are persisted in localStorage. Optional: use `createChronosStore` for app state and state_snapshot events (those appear in the log too).
+
+**Basic usage example (emit only):**
+
+```tsx
+import { useChronos } from 'chronos-analytics'
+
+function SubmitButton() {
+  const { emit } = useChronos()
+  const handleClick = () => {
+    emit('button_click', { action: 'submit', formId: 'contact' })
+    // ... then do actual submit
+  }
+  return <button onClick={handleClick}>Submit</button>
+}
+```
 
 ---
 
@@ -44,15 +61,16 @@ flowchart TB
   EventBus --> ConsoleSink
   EventBus --> LocalStorageSink
   EventBus -->|forward optional| ProviderSink[ProviderSink]
-  LocalStorageSink -->|persisted events| ReplayEngine
-  ReplayEngine -->|restore state| ChronosStore
-  DevTools -->|scrub to timestamp| ReplayEngine
+  LocalStorageSink -->|persisted events| DevTools
+  DevTools -->|display event log| EventLog[Event log with timestamps]
   ProviderSink -->|track / page / identify| Segment[Segment or any provider]
 ```
 
 - **EventBus** is the backbone: all events flow through it. Sinks subscribe and do not depend on each other.
-- **ChronosStore** emits a `state_snapshot` event on every state change so ReplayEngine can re-hydrate.
-- **ProviderSink** (from `createProviderSink`) forwards live events to external analytics (e.g. Segment); replay is Chronos-only.
+- **useChronos** is the primary API for emitting events: returns `{ emit }`. No store or reducer required for basic tracking.
+- **ChronosStore** (optional) emits a `state_snapshot` event on every state change; those events appear in the event log like any other.
+- **ChronosDevTools** displays the event log (timestamp, eventName, payload) from localStorage; no state scrubber or play/pause.
+- **ProviderSink** (from `createProviderSink`) forwards live events to external analytics (e.g. Segment).
 
 ---
 
@@ -72,7 +90,7 @@ flowchart TB
 ## 4. Types and Contracts
 
 - **AnalyticsEvent:** `id`, `timestamp`, `eventName`, `payload`, `metadata?`. All events (including state_snapshot) use this shape.
-- **State snapshot:** `eventName === "state_snapshot"`, `payload: { state: unknown }`. ReplayEngine uses `payload.state`; provider sinks should skip these.
+- **State snapshot:** `eventName === "state_snapshot"`, `payload: { state: unknown }`. Emitted by ChronosStore; provider sinks should skip these. Shown in event log like other events.
 - **EventSink:** `type EventSink = (event: AnalyticsEvent) => void` — contract for `EventBus.subscribe(sink)`.
 - **IAnalyticsProvider:** `track(eventName, properties)`; optional `page?`, `identify?`, `group?`. Implemented by the app (e.g. Segment adapter); Chronos only consumes this interface via `createProviderSink`.
 
@@ -92,14 +110,14 @@ flowchart TB
 | Module | Responsibility |
 |--------|-----------------|
 | **EventBus** | Singleton: `emit(event)`, `subscribe(sink) => unsubscribe`. Synchronous broadcast to all sinks. |
+| **useChronos** | Hook: returns `{ emit(eventName, payload?, metadata?) }`. Uses EventBus singleton. **Primary API** for basic use — no reducer/store. |
 | **ConsoleSink** | `init(eventBus)` — log each event (e.g. dev only). |
 | **LocalStorageSink** | `init(eventBus, { key?, maxEvents? })` — append events to localStorage; cap size. |
 | **createProviderSink** | `(provider: IAnalyticsProvider, options?) => EventSink`. Skip state_snapshot; forward others to `provider.track(eventName, payload)`. Options: `filter`, `mapToTrack`. |
-| **ChronosStore** | `createChronosStore<S, A>(reducer, initialState)` → `{ ChronosStoreProvider, useChronosStore }`. Emit state_snapshot after every state change. |
+| **ChronosStore** | (Optional.) `createChronosStore<S, A>(reducer, initialState)` → `{ ChronosStoreProvider, useChronosStore }`. Emit state_snapshot after every state change (events appear in the log). |
 | **withTracking** | HOC: intercept onClick → emit analytics event → call original onClick. |
-| **ReplayEngine** | Load `AnalyticsEvent[]`; filter state_snapshot; expose `getStateAtIndex(i)`, play/pause/seek/speed. |
-| **ReplayContext** | Provide `replayState`, `isReplaying`, controls. When isReplaying, app reads from replay state instead of live store. |
-| **ChronosDevTools** | Fixed overlay: scrubber, play/pause, speed. Load events from localStorage; drive ReplayEngine and ReplayContext. Style with inline styles or shipped CSS (no Tailwind dependency for consumers). |
+| **ReplayEngine** | Holds `AnalyticsEvent[]` for display; `load(events)`, `getEvents()`. Used only if building custom event log UIs. |
+| **ChronosDevTools** | Fixed overlay: **event log** (timestamp, eventName, payload). Load from localStorage; Refresh and Clear. No state scrubber. Inline styles. |
 
 ---
 
@@ -107,8 +125,9 @@ flowchart TB
 
 **Library (published):**
 
-- `src/index.ts` — Re-export EventBus, sinks, createProviderSink, createChronosStore, withTracking, ReplayEngine, ChronosDevTools, ReplayProvider, types.
+- `src/index.ts` — Re-export EventBus, useChronos, sinks, createProviderSink, createChronosStore, withTracking, ReplayEngine, ChronosDevTools, types.
 - `src/types/chronos.ts` — AnalyticsEvent, EventSink, IAnalyticsProvider, snapshot payload type.
+- `src/hooks/useChronos.ts` — useChronos() → { emit(eventName, payload?, metadata?) }. Uses getEventBus() under the hood.
 - `src/lib/EventBus.ts`
 - `src/lib/sinks/ConsoleSink.ts`
 - `src/lib/sinks/LocalStorageSink.ts`
@@ -122,22 +141,22 @@ flowchart TB
 **Demo (not published):**
 
 - `examples/demo/` — Vite React app; dependency on root package (link or workspace).
-- `examples/demo/src/App.tsx` — ChronosStoreProvider, ReplayProvider, Counter, TodoList, ChronosDevTools, sink registration.
+- `examples/demo/src/App.tsx` — ChronosStoreProvider, Counter, TodoList, ChronosDevTools, sink registration.
 - `examples/demo/src/components/Counter.tsx`, `TodoList.tsx` — Use store + withTracking.
 
 ---
 
 ## 8. Implementation Order
 
-1. Library scaffold: package.json, tsconfig (strict), vite.config (lib mode), folders (lib, hoc, components, types).
+1. Library scaffold: package.json, tsconfig (strict), vite.config (lib mode), folders (lib, hooks, hoc, components, types).
 2. Types in `src/types/chronos.ts` (AnalyticsEvent, EventSink, IAnalyticsProvider); export from index.
-3. EventBus; ConsoleSink, LocalStorageSink, createProviderSink; export from index.
-4. ChronosStore (createChronosStore, state_snapshot on change); export from index.
+3. EventBus; **useChronos** hook (returns { emit }); ConsoleSink, LocalStorageSink, createProviderSink; export from index.
+4. ChronosStore (optional; createChronosStore, state_snapshot on change); export from index.
 5. withTracking HOC; export from index.
-6. ReplayEngine + ReplayContext; export from index.
-7. ChronosDevTools (overlay, scrubber, inline or shipped CSS); export from index.
+6. ReplayEngine (event log: load, getEvents); export from index.
+7. ChronosDevTools (event log overlay: timestamp, eventName, payload; Refresh/Clear); export from index.
 8. Build; ensure dist/ has JS and d.ts.
-9. Demo app: examples/demo, reducer + Counter + TodoList, Provider + DevTools + sinks; verify replay and localStorage persistence.
+9. Demo app: examples/demo, reducer + Counter + TodoList, Provider + DevTools + sinks; verify event log and localStorage persistence.
 
 ---
 
