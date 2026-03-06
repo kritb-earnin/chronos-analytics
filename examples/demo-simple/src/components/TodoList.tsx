@@ -1,5 +1,13 @@
 import { useChronos, withTracking } from 'chronos-analytics'
 import { useState } from 'react'
+import { Button } from '@/components/ui/button'
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import { cn } from '@/lib/utils'
 
 interface Todo {
   id: string
@@ -7,13 +15,14 @@ interface Todo {
   done: boolean
 }
 
-function Button(
-  props: React.ButtonHTMLAttributes<HTMLButtonElement>
+function TodoButton(
+  props: React.ComponentProps<typeof Button> & {
+    onClick?: (e: React.MouseEvent<unknown>) => void
+  }
 ): React.ReactElement {
-  return <button {...props} />
+  return <Button {...(props as React.ComponentProps<typeof Button>)} />
 }
-
-const TrackedButton = withTracking(Button, 'todo_click')
+const TrackedButton = withTracking(TodoButton, 'todo_click')
 
 export function TodoList(): React.ReactElement {
   const [todos, setTodos] = useState<Todo[]>([])
@@ -39,38 +48,45 @@ export function TodoList(): React.ReactElement {
   }
 
   return (
-    <section style={{ marginBottom: 24 }}>
-      <h2>Todos</h2>
-      <TrackedButton onClick={addTodo}>Add todo</TrackedButton>
-      <ul style={{ listStyle: 'none', padding: 0, marginTop: 8 }}>
-        {todos.map((todo) => (
-          <li
-            key={todo.id}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              marginBottom: 4,
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={todo.done}
-              onChange={() => toggleTodo(todo.id)}
-            />
-            <span
-              style={{
-                textDecoration: todo.done ? 'line-through' : undefined,
-              }}
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0">
+        <CardTitle>Todos</CardTitle>
+        <TrackedButton size="sm" onClick={addTodo}>
+          Add todo
+        </TrackedButton>
+      </CardHeader>
+      <CardContent>
+        <ul className="space-y-2">
+          {todos.map((todo) => (
+            <li
+              key={todo.id}
+              className="flex items-center gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-muted)]/30 px-3 py-2"
             >
-              {todo.text}
-            </span>
-            <TrackedButton onClick={() => removeTodo(todo.id)}>
-              Remove
-            </TrackedButton>
-          </li>
-        ))}
-      </ul>
-    </section>
+              <input
+                type="checkbox"
+                checked={todo.done}
+                onChange={() => toggleTodo(todo.id)}
+                className="h-4 w-4 rounded border-[var(--color-border)]"
+              />
+              <span
+                className={cn(
+                  'flex-1 text-sm',
+                  todo.done && 'text-[var(--color-muted-foreground)] line-through'
+                )}
+              >
+                {todo.text}
+              </span>
+              <TrackedButton
+                variant="destructive"
+                size="sm"
+                onClick={() => removeTodo(todo.id)}
+              >
+                Remove
+              </TrackedButton>
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
   )
 }

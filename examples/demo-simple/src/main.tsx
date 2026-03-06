@@ -6,6 +6,7 @@ import {
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
+import './index.css'
 
 const eventBus = getEventBus()
 initLocalStorageSink(eventBus, { key: 'chronos-events', maxEvents: 1000 })

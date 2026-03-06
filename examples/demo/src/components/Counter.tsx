@@ -1,30 +1,45 @@
 import { withTracking } from 'chronos-analytics'
-import { useChronosStore } from '../store'
+import { useChronosStore } from '@/store'
+import { Button } from '@/components/ui/button'
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 
-function Button({
-  onClick,
-  children,
-  ...rest
-}: React.ButtonHTMLAttributes<HTMLButtonElement>): React.ReactElement {
-  return <button {...rest} onClick={onClick}>{children}</button>
+function CounterButton(
+  props: React.ComponentProps<typeof Button> & {
+    onClick?: (e: React.MouseEvent<unknown>) => void
+  }
+): React.ReactElement {
+  return <Button {...(props as React.ComponentProps<typeof Button>)} />
 }
-
-const TrackedButton = withTracking(Button, 'counter_click')
+const TrackedButton = withTracking(CounterButton, 'counter_click')
 
 export function Counter(): React.ReactElement {
   const [state, dispatch] = useChronosStore()
   return (
-    <section style={{ marginBottom: 24 }}>
-      <h2>Counter</h2>
-      <p style={{ fontSize: 24, fontWeight: 600 }}>{state.counter}</p>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <TrackedButton onClick={() => dispatch({ type: 'INCREMENT' })}>
-          +1
-        </TrackedButton>
-        <TrackedButton onClick={() => dispatch({ type: 'DECREMENT' })}>
-          -1
-        </TrackedButton>
-      </div>
-    </section>
+    <Card>
+      <CardHeader>
+        <CardTitle>Counter</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-4xl font-semibold tabular-nums tracking-tight">
+          {state.counter}
+        </p>
+        <div className="flex gap-2">
+          <TrackedButton onClick={() => dispatch({ type: 'INCREMENT' })}>
+            +1
+          </TrackedButton>
+          <TrackedButton
+            variant="outline"
+            onClick={() => dispatch({ type: 'DECREMENT' })}
+          >
+            -1
+          </TrackedButton>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
