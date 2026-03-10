@@ -29,7 +29,7 @@ flowchart TB
     ChronosStore[ChronosStore]
   end
 
-  subgraph sinks [Sinks (async)]
+  subgraph sinks [Sinks-async]
     ConsoleSink[ConsoleSink]
     LocalStorageSink[LocalStorageSink]
     ProviderSink[createProviderSink / createBatchedProviderSink]

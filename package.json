@@ -11,7 +11,8 @@
       "import": "./dist/chronos-analytics.js",
       "require": "./dist/chronos-analytics.cjs",
       "types": "./dist/index.d.ts"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist"
@@ -20,7 +21,10 @@
     "build": "vite build",
     "dev": "vite build --watch",
     "dev:demo1": "cd examples/demo && pnpm dev",
-    "dev:demo2": "cd examples/demo-simple && pnpm dev"
+    "dev:demo2": "cd examples/demo-simple && pnpm dev",
+    "dev:mf-remote": "cd examples/microfrontend/remote && pnpm dev",
+    "dev:mf-shell": "cd examples/microfrontend/shell && pnpm dev",
+    "build:microfrontend": "cd examples/microfrontend/remote && pnpm build && cd ../shell && pnpm build"
   },
   "peerDependencies": {
     "react": ">=18.0.0",
