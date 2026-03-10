@@ -172,11 +172,32 @@ function getChronosSourceId(event: AnalyticsEvent): string | undefined {
     : undefined
 }
 
+function findElementByChronosSourceId(
+  sourceId: string,
+  root: Document | ShadowRoot = document
+): HTMLElement | null {
+  const walk = (container: Document | ShadowRoot): HTMLElement | null => {
+    const nodes = container.querySelectorAll('*')
+    for (const node of nodes) {
+      if (
+        node instanceof HTMLElement &&
+        node.getAttribute('data-chronos-source-id') === sourceId
+      ) {
+        return node
+      }
+      if (node.shadowRoot) {
+        const found = walk(node.shadowRoot)
+        if (found) return found
+      }
+    }
+    return null
+  }
+  return walk(root)
+}
+
 function highlightSourceElement(sourceId: string): void {
   if (typeof document === 'undefined') return
-  const el = document.querySelector<HTMLElement>(
-    `[data-chronos-source-id="${sourceId.replace(/"/g, '\\"')}"]`
-  )
+  const el = findElementByChronosSourceId(sourceId)
   if (!el) return
   const prevOutline = el.style.outline
   const prevBoxShadow = el.style.boxShadow
