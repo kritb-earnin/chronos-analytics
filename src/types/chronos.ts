@@ -34,8 +34,18 @@ export interface StateSnapshotPayload {
 export type EventSink = (event: AnalyticsEvent) => void
 
 /**
+ * Single track payload (eventName + properties). Used by createProviderSink
+ * and by batch sending when the provider supports trackBatch.
+ */
+export interface TrackPayload {
+  eventName: string
+  properties: Record<string, unknown>
+}
+
+/**
  * Optional interface for external analytics (e.g. Segment, GTM).
  * The host app implements this (e.g. adapter around `analytics.track()`); Chronos consumes it via `createProviderSink(provider)`.
+ * For high throughput, implement trackBatch so Chronos can send events in batches (e.g. Segment HTTP /v1/batch).
  */
 export interface IAnalyticsProvider {
   /**
@@ -47,6 +57,12 @@ export interface IAnalyticsProvider {
     eventName: string,
     properties: Record<string, unknown>
   ): void | Promise<void>
+  /**
+   * Optional: send multiple track events in one batch. When implemented, Chronos
+   * uses this for batched provider sinks (e.g. Segment POST /v1/batch), reducing
+   * outbound requests and main-thread work.
+   */
+  trackBatch?(events: TrackPayload[]): void | Promise<void>
   /** Optional: track page/screen view. */
   page?(
     screenName: string,

@@ -1,53 +1,88 @@
-import type { AnalyticsEvent, EventSink, IAnalyticsProvider } from '../../types/chronos'
-import { STATE_SNAPSHOT } from '../EventBus'
+import type {
+  AnalyticsEvent,
+  EventSink,
+  IAnalyticsProvider,
+  TrackPayload,
+} from '../../types/chronos'
+import {
+  appendUnsentEvents,
+  clearUnsentEvents,
+  getUnsentEvents,
+} from './unsentEventsStorage'
+import { mapEventToTrackPayload, sendToProvider } from './providerHelpers'
+import type { MapEventToTrackOptions } from './providerHelpers'
+import { DEFAULT_UNSENT_STORAGE_KEY, hasWindow, isOnline, runAsync } from './utils'
 
 /**
  * Options for createProviderSink. state_snapshot is always skipped; use filter to skip other events or mapToTrack to reshape.
  */
-export interface CreateProviderSinkOptions {
-  /** If provided and returns false, the event is not forwarded to the provider. */
-  filter?: (event: AnalyticsEvent) => boolean
-  /** Map Chronos event to track(eventName, properties); return null to skip this event. */
-  mapToTrack?: (
-    event: AnalyticsEvent
-  ) => { eventName: string; properties: Record<string, unknown> } | null
+export interface CreateProviderSinkOptions extends MapEventToTrackOptions {
+  /**
+   * localStorage key for persisting unsent events on page unload or when offline.
+   * Replayed when the app loads or when the browser goes back online. Default: 'chronos-unsent-events'.
+   */
+  unsentEventsStorageKey?: string
 }
 
 /**
  * Create an EventSink that forwards Chronos events to an external analytics provider (e.g. Segment).
- * state_snapshot events are never forwarded. Subscribe the returned sink: eventBus.subscribe(createProviderSink(provider, options)).
- * @param provider - Implementation of IAnalyticsProvider (e.g. Segment adapter)
- * @param options - Optional filter and mapToTrack
- * @returns EventSink to pass to eventBus.subscribe()
+ * Events are always sent asynchronously. On page unload or when offline, unsent events are stored
+ * in localStorage and replayed when the app loads or when back online.
+ * state_snapshot events are never forwarded.
+ * Subscribe the returned sink: eventBus.subscribe(createProviderSink(provider, options)).
  */
 export function createProviderSink(
   provider: IAnalyticsProvider,
   options: CreateProviderSinkOptions = {}
 ): EventSink {
-  const { filter, mapToTrack } = options
+  const storageKey = options.unsentEventsStorageKey ?? DEFAULT_UNSENT_STORAGE_KEY
+  const queue: TrackPayload[] = []
+  let drainScheduled = false
+
+  function drain(): void {
+    if (queue.length === 0) {
+      drainScheduled = false
+      return
+    }
+    if (!isOnline()) {
+      appendUnsentEvents(storageKey, queue.splice(0, queue.length))
+      drainScheduled = false
+      return
+    }
+    const batch = queue.splice(0, queue.length)
+    drainScheduled = false
+    sendToProvider(provider, batch)
+  }
+
+  function scheduleDrain(): void {
+    if (drainScheduled) return
+    drainScheduled = true
+    runAsync(drain)
+  }
+
+  function persistQueueOnUnload(): void {
+    if (queue.length === 0) return
+    appendUnsentEvents(storageKey, queue.splice(0, queue.length))
+  }
+
+  function replayUnsent(): void {
+    if (!isOnline()) return
+    const unsent = getUnsentEvents(storageKey)
+    if (unsent.length === 0) return
+    clearUnsentEvents(storageKey)
+    sendToProvider(provider, unsent, 'replay')
+  }
+
+  if (hasWindow()) {
+    window.addEventListener('pagehide', persistQueueOnUnload)
+    window.addEventListener('online', () => runAsync(replayUnsent))
+    runAsync(replayUnsent)
+  }
 
   return (event: AnalyticsEvent) => {
-    if (event.eventName === STATE_SNAPSHOT) return
-    if (filter && !filter(event)) return
-
-    const mapped = mapToTrack
-      ? mapToTrack(event)
-      : {
-          eventName: event.eventName,
-          properties: {
-            ...(typeof event.payload === 'object' && event.payload !== null
-              ? (event.payload as Record<string, unknown>)
-              : {}),
-            ...(event.metadata ?? {}),
-          },
-        }
+    const mapped = mapEventToTrackPayload(event, options)
     if (!mapped) return
-
-    const result = provider.track(mapped.eventName, mapped.properties)
-    if (result && typeof (result as Promise<unknown>).catch === 'function') {
-      (result as Promise<void>).catch((err) =>
-        console.error('[Chronos] Provider track error:', err)
-      )
-    }
+    queue.push(mapped)
+    scheduleDrain()
   }
 }

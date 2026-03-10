@@ -4,6 +4,7 @@ export type {
   EventSink,
   IAnalyticsProvider,
   StateSnapshotPayload,
+  TrackPayload,
 } from './types/chronos'
 
 // EventBus
@@ -20,13 +21,18 @@ export { useChronos } from './hooks/useChronos'
 export type { UseChronosReturn } from './hooks/useChronos'
 
 // Sinks
-export { init as initConsoleSink } from './lib/sinks/ConsoleSink'
-export { init as initLocalStorageSink, loadEvents } from './lib/sinks/LocalStorageSink'
-export type { LocalStorageSinkOptions } from './lib/sinks/LocalStorageSink'
 export {
+  initConsoleSink,
+  initLocalStorageSink,
+  loadEvents,
   createProviderSink,
-} from './lib/sinks/createProviderSink'
-export type { CreateProviderSinkOptions } from './lib/sinks/createProviderSink'
+  createBatchedProviderSink,
+} from './lib/sinks'
+export type {
+  LocalStorageSinkOptions,
+  CreateProviderSinkOptions,
+  BatchedProviderSinkOptions,
+} from './lib/sinks'
 
 // Store (optional, for replay)
 export { createChronosStore, STATE_SNAPSHOT as CHRONOS_STORE_STATE_SNAPSHOT } from './lib/ChronosStore'

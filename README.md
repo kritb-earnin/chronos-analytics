@@ -8,7 +8,7 @@ Event sourcing for the frontend — high-fidelity event tracking and an event lo
 
 ### Component diagram
 
-The following diagram shows the main pieces of Chronos and how they connect. Your app components emit events via **useChronos** or **withTracking**; the **EventBus** broadcasts every event to all registered **sinks**. Sinks can log to the console, persist to localStorage, or forward to an external provider (e.g. Segment). **ChronosDevTools** subscribes to the bus for live updates and reads persisted events for the event log. Optionally, **ChronosStore** emits `state_snapshot` events on each state change.
+The following diagram shows the main pieces of Chronos and how they connect. Your app components emit events via **useChronos** or **withTracking**; the **EventBus** broadcasts every event to all registered **sinks**. Sinks log to the console, persist to localStorage, or forward to an external provider (e.g. Segment)—all asynchronously so the bus never blocks. On page unload or when offline, unsent provider events are stored in localStorage and replayed when the app loads or comes back online. **ChronosDevTools** subscribes to the bus for live updates and reads persisted events for the event log. Optionally, **ChronosStore** emits `state_snapshot` events on each state change.
 
 ```mermaid
 flowchart TB
@@ -29,10 +29,10 @@ flowchart TB
     ChronosStore[ChronosStore]
   end
 
-  subgraph sinks [Sinks]
+  subgraph sinks [Sinks (async)]
     ConsoleSink[ConsoleSink]
     LocalStorageSink[LocalStorageSink]
-    ProviderSink[createProviderSink]
+    ProviderSink[createProviderSink / createBatchedProviderSink]
   end
 
   subgraph external [External]
@@ -62,7 +62,7 @@ flowchart TB
 
 ### Sequence diagram: bootstrap and emit
 
-**Bootstrap:** The app registers sinks with the EventBus before mounting so every event is captured. **Emit:** When a user interacts (e.g. click), `useChronos().emit()` or `withTracking` calls `emitEvent`; the EventBus notifies all sinks synchronously. Console logs, LocalStorage appends, and the provider sink (if configured) forwards to Segment.
+**Bootstrap:** The app registers sinks with the EventBus before mounting so every event is captured. **Emit:** When a user interacts (e.g. click), `useChronos().emit()` or `withTracking` calls `emitEvent`; the EventBus notifies all sinks synchronously. Each sink then processes the event without blocking: Console and provider sinks queue work and run it asynchronously; LocalStorage appends in the same tick. The provider sink (if configured) forwards to Segment in the next tick or in batches; unsent events on unload/offline are stored in localStorage and replayed on load/online.
 
 ```mermaid
 sequenceDiagram
@@ -88,9 +88,10 @@ sequenceDiagram
   Bus->>Console: sink(event)
   Bus->>Local: sink(event)
   Bus->>Provider: sink(event)
-  Console->>Console: console.log(event)
+  Console->>Console: queue → log async
   Local->>Local: append to localStorage
-  Provider->>Segment: provider.track(eventName, properties)
+  Provider->>Provider: queue event
+  Provider->>Segment: (async) provider.track(...) or trackBatch(...)
 
   Note over Bus, DevTools: DevTools event log
   DevTools->>Local: loadEvents(key) on mount + refresh
@@ -157,7 +158,7 @@ import App from './App'
 
 const eventBus = getEventBus()
 initLocalStorageSink(eventBus, { key: 'chronos-events', maxEvents: 1000 })
-initConsoleSink(eventBus) // optional; logs events to console in dev
+initConsoleSink(eventBus) // optional; logs events to console asynchronously
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
@@ -363,6 +364,46 @@ eventBus.subscribe(
 
 Result: All events emitted via `useChronos().emit()` or `withTracking` (and, if you use it, non–state_snapshot events from ChronosStore) are also sent to Segment. The event log and replay stay in Chronos; Segment only receives live events.
 
+### 4. Async sending and unsent events (unload / offline)
+
+Provider sinks always send events **asynchronously** so `EventBus.emit()` never blocks. On **page unload** (navigation, close, refresh) or when the app is **offline**, unsent events are stored in **localStorage** and **replayed** when the app loads again or when the browser goes back online. Use **`createBatchedProviderSink`** for high event volume or when your provider supports batch (e.g. Segment `/v1/batch`).
+
+```tsx
+import {
+  getEventBus,
+  createBatchedProviderSink,
+} from 'chronos-analytics'
+import { segmentChronosAdapter } from './adapters/segmentChronosAdapter'
+
+const eventBus = getEventBus()
+eventBus.subscribe(
+  createBatchedProviderSink(segmentChronosAdapter, {
+    batchSize: 10,
+    flushIntervalMs: 5000,
+    useIdleCallback: true,
+    unsentEventsStorageKey: 'chronos-unsent-events', // default; used for unload/offline replay
+  })
+)
+```
+
+For fewer outbound requests (e.g. Segment’s [batch API](https://segment.com/docs/connections/sources/catalog/libraries/server/http-api#batch)), implement **`trackBatch`** on your adapter. Chronos will call it with an array of `{ eventName, properties }` instead of calling `track()` per event:
+
+```ts
+// adapters/segmentChronosAdapter.ts
+import type { IAnalyticsProvider, TrackPayload } from 'chronos-analytics'
+
+export const segmentChronosAdapter: IAnalyticsProvider = {
+  track: (eventName, properties) => analytics.track(eventName, properties),
+  trackBatch: (events: TrackPayload[]) => {
+    // e.g. POST https://api.segment.io/v1/batch with batch: events.map(e => ({ type: 'track', event: e.eventName, properties: e.properties }))
+    return sendSegmentBatch(events)
+  },
+  page: (screenName, properties) => analytics.page(screenName, properties),
+  identify: (userId, traits) => analytics.identify(userId, traits),
+  group: (groupId, traits) => analytics.group(groupId, traits),
+}
+```
+
 ---
 
 ## API overview
@@ -371,10 +412,11 @@ Result: All events emitted via `useChronos().emit()` or `withTracking` (and, if 
 |--------|-------------|
 | `getEventBus()` | Singleton event bus; use to register sinks. |
 | `useChronos()` | Hook that returns `{ emit(eventName, payload?, metadata?) }`. |
-| `initConsoleSink(eventBus)` | Log every event to the console. |
+| `initConsoleSink(eventBus)` | Log every event to the console asynchronously. |
 | `initLocalStorageSink(eventBus, options)` | Persist events to localStorage (key, maxEvents). |
 | `loadEvents(storageKey?)` | Read persisted events (e.g. for custom UIs). |
-| `createProviderSink(provider, options)` | Sink that forwards events to an `IAnalyticsProvider` (e.g. Segment). |
+| `createProviderSink(provider, options)` | Sink that forwards events asynchronously to an `IAnalyticsProvider` (e.g. Segment). Unsent events on unload/offline are stored in localStorage and replayed on load/online. |
+| `createBatchedProviderSink(provider, options)` | Sink that queues events and sends in batches asynchronously; unsent events on unload/offline stored in localStorage and replayed on load/online. Use with `trackBatch` (e.g. Segment batch API) for fewer requests. |
 | `createChronosStore(reducer, initialState)` | Returns `{ ChronosStoreProvider, useChronosStore }`; emits `state_snapshot` on each state change. |
 | `withTracking(Component, eventName?)` | HOC: on click, emit event then call original onClick. |
 | `ChronosDevTools` | Minimizable event log (and bubble with badge). |
@@ -394,6 +436,12 @@ pnpm install
 pnpm --filter chronos-demo dev        # demo with store (port 5174)
 pnpm --filter chronos-demo-simple dev # demo with useState only (port 5175)
 ```
+
+---
+
+## Library structure
+
+The package is built from `src/`: types, EventBus, `useChronos`, sinks, optional ChronosStore, `withTracking`, ReplayEngine, and ChronosDevTools. Sinks live under `src/lib/sinks/`: shared utilities (scheduling, env checks), provider helpers (event→payload mapping, send to provider), unsent-events localStorage persistence, and the individual sink implementations (Console, LocalStorage, createProviderSink, createBatchedProviderSink). The public API is re-exported from `src/index.ts`.
 
 ---
 

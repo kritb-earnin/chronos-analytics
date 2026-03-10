@@ -92,7 +92,7 @@ flowchart TB
 - **AnalyticsEvent:** `id`, `timestamp`, `eventName`, `payload`, `metadata?`. All events (including state_snapshot) use this shape.
 - **State snapshot:** `eventName === "state_snapshot"`, `payload: { state: unknown }`. Emitted by ChronosStore; provider sinks should skip these. Shown in event log like other events.
 - **EventSink:** `type EventSink = (event: AnalyticsEvent) => void` — contract for `EventBus.subscribe(sink)`.
-- **IAnalyticsProvider:** `track(eventName, properties)`; optional `page?`, `identify?`, `group?`. Implemented by the app (e.g. Segment adapter); Chronos only consumes this interface via `createProviderSink`.
+- **IAnalyticsProvider:** `track(eventName, properties)`; optional `trackBatch?(events)`, `page?`, `identify?`, `group?`. Implemented by the app (e.g. Segment adapter); Chronos consumes it via `createProviderSink(provider)` or `createBatchedProviderSink(provider)` for async/batch sending.
 
 ---
 
@@ -111,9 +111,10 @@ flowchart TB
 |--------|-----------------|
 | **EventBus** | Singleton: `emit(event)`, `subscribe(sink) => unsubscribe`. Synchronous broadcast to all sinks. |
 | **useChronos** | Hook: returns `{ emit(eventName, payload?, metadata?) }`. Uses EventBus singleton. **Primary API** for basic use — no reducer/store. |
-| **ConsoleSink** | `init(eventBus)` — log each event (e.g. dev only). |
+| **ConsoleSink** | `init(eventBus)` — log each event asynchronously (e.g. dev only). |
 | **LocalStorageSink** | `init(eventBus, { key?, maxEvents? })` — append events to localStorage; cap size. |
-| **createProviderSink** | `(provider: IAnalyticsProvider, options?) => EventSink`. Skip state_snapshot; forward others to `provider.track(eventName, payload)`. Options: `filter`, `mapToTrack`. |
+| **createProviderSink** | `(provider, options?) => EventSink`. Always async. Skip state_snapshot; forward to `provider.track`. On page unload or offline, unsent events stored in localStorage (option: `unsentEventsStorageKey`); replayed on load/online. Options: `filter`, `mapToTrack`, `unsentEventsStorageKey`. |
+| **createBatchedProviderSink** | `(provider, options?) => EventSink`. Queue and send in batches asynchronously; same unload/offline → localStorage → replay on load/online. Options: same as createProviderSink plus `batchSize`, `flushIntervalMs`, `useIdleCallback`. Use with `trackBatch` (e.g. Segment /v1/batch) for fewer requests. |
 | **ChronosStore** | (Optional.) `createChronosStore<S, A>(reducer, initialState)` → `{ ChronosStoreProvider, useChronosStore }`. Emit state_snapshot after every state change (events appear in the log). |
 | **withTracking** | HOC: intercept onClick → emit analytics event → call original onClick. |
 | **ReplayEngine** | Holds `AnalyticsEvent[]` for display; `load(events)`, `getEvents()`. Used only if building custom event log UIs. |
@@ -131,7 +132,14 @@ flowchart TB
 - `src/lib/EventBus.ts`
 - `src/lib/sinks/ConsoleSink.ts`
 - `src/lib/sinks/LocalStorageSink.ts`
+- `src/lib/sinks/index.ts` — barrel: re-exports Console, LocalStorage, createProviderSink, createBatchedProviderSink
+- `src/lib/sinks/utils.ts` — runAsync, scheduleFlush, isOnline, hasWindow, DEFAULT_UNSENT_STORAGE_KEY
+- `src/lib/sinks/providerHelpers.ts` — mapEventToTrackPayload, sendToProvider (shared by provider sinks)
+- `src/lib/sinks/unsentEventsStorage.ts` — get/append/clear unsent events in localStorage (unload/offline replay)
+- `src/lib/sinks/ConsoleSink.ts`
+- `src/lib/sinks/LocalStorageSink.ts`
 - `src/lib/sinks/createProviderSink.ts`
+- `src/lib/sinks/createBatchedProviderSink.ts`
 - `src/lib/ChronosStore.ts`
 - `src/lib/ReplayEngine.ts`
 - `src/hoc/withTracking.tsx`
