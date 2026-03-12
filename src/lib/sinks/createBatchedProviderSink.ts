@@ -10,6 +10,7 @@ import {
   clearUnsentEvents,
   getUnsentEvents,
 } from './unsentEventsStorage'
+import { markSent } from './providerSentStatus'
 import { mapEventToTrackPayload, sendToProvider } from './providerHelpers'
 import {
   DEFAULT_UNSENT_STORAGE_KEY,
@@ -17,6 +18,9 @@ import {
   isOnline,
   scheduleFlush,
 } from './utils'
+
+/** Internal queue item: payload plus Chronos event id for sent-status. */
+type QueuedItem = TrackPayload & { eventId: string }
 
 const DEFAULT_BATCH_SIZE = 10
 const DEFAULT_FLUSH_INTERVAL_MS = 5000
@@ -56,7 +60,7 @@ export function createBatchedProviderSink(
   } = options
   const storageKey = options.unsentEventsStorageKey ?? DEFAULT_UNSENT_STORAGE_KEY
 
-  const queue: TrackPayload[] = []
+  const queue: QueuedItem[] = []
   let flushTimer: ReturnType<typeof setTimeout> | null = null
   let flushScheduled = false
 
@@ -70,7 +74,10 @@ export function createBatchedProviderSink(
 
     if (!isOnline()) {
       const batch = queue.splice(0, batchSize)
-      appendUnsentEvents(storageKey, batch)
+      appendUnsentEvents(
+        storageKey,
+        batch.map(({ eventId: _id, ...p }) => p)
+      )
       if (queue.length > 0) {
         flushScheduled = true
         scheduleFlush(flush, useIdleCallback)
@@ -79,7 +86,9 @@ export function createBatchedProviderSink(
     }
 
     const batch = queue.splice(0, batchSize)
-    sendToProvider(provider, batch)
+    const payloads = batch.map(({ eventId: _id, ...p }) => p)
+    sendToProvider(provider, payloads)
+    markSent(batch.map((b) => b.eventId))
 
     if (queue.length > 0) {
       flushScheduled = true
@@ -99,7 +108,11 @@ export function createBatchedProviderSink(
 
   function persistQueueOnUnload(): void {
     if (queue.length === 0) return
-    appendUnsentEvents(storageKey, queue.splice(0, queue.length))
+    const items = queue.splice(0, queue.length)
+    appendUnsentEvents(
+      storageKey,
+      items.map(({ eventId: _id, ...p }) => p)
+    )
   }
 
   function replayUnsent(): void {
@@ -119,7 +132,7 @@ export function createBatchedProviderSink(
   return (event: AnalyticsEvent) => {
     const payload = mapEventToTrackPayload(event, options)
     if (!payload) return
-    queue.push(payload)
+    queue.push({ ...payload, eventId: event.id })
 
     if (queue.length >= batchSize) {
       if (flushTimer !== null) {

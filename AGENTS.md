@@ -118,7 +118,7 @@ flowchart TB
 | **ChronosStore** | (Optional.) `createChronosStore<S, A>(reducer, initialState)` → `{ ChronosStoreProvider, useChronosStore }`. Emit state_snapshot after every state change (events appear in the log). |
 | **withTracking** | HOC: intercept onClick → emit analytics event → call original onClick. |
 | **ReplayEngine** | Holds `AnalyticsEvent[]` for display; `load(events)`, `getEvents()`. Used only if building custom event log UIs. |
-| **ChronosDevTools** | Fixed overlay: **event log** (timestamp, eventName, payload). Load from localStorage; Refresh and Clear. No state scrubber. Inline styles. |
+| **ChronosDevTools** | Fixed overlay: **event log** (timestamp, eventName, payload). Row color by sending status (sent vs pending to provider). Rows with `_chronosSourceId` show "Locate" pill; click to highlight source element. Load from localStorage; Refresh and Clear. No state scrubber. Inline styles. |
 
 ---
 
@@ -136,6 +136,7 @@ flowchart TB
 - `src/lib/sinks/utils.ts` — runAsync, scheduleFlush, isOnline, hasWindow, DEFAULT_UNSENT_STORAGE_KEY
 - `src/lib/sinks/providerHelpers.ts` — mapEventToTrackPayload, sendToProvider (shared by provider sinks)
 - `src/lib/sinks/unsentEventsStorage.ts` — get/append/clear unsent events in localStorage (unload/offline replay)
+- `src/lib/sinks/providerSentStatus.ts` — track which event IDs have been sent to provider; DevTools uses for row styling; optional sessionStorage persistence
 - `src/lib/sinks/ConsoleSink.ts`
 - `src/lib/sinks/LocalStorageSink.ts`
 - `src/lib/sinks/createProviderSink.ts`

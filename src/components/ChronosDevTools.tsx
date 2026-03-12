@@ -2,6 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import type { AnalyticsEvent } from '../types/chronos'
 import { getEventBus } from '../lib/EventBus'
 import { loadEvents } from '../lib/sinks/LocalStorageSink'
+import {
+  getSentEventIds,
+  subscribeToSent,
+} from '../lib/sinks/providerSentStatus'
 
 const STORAGE_KEY = 'chronos-events'
 
@@ -137,6 +141,50 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     background: 'rgba(255,255,255,0.06)',
   },
+  rowSent: {
+    padding: '6px 8px',
+    borderBottom: '1px solid #333',
+    borderLeft: '3px solid rgba(107, 136, 107, 0.6)',
+    fontFamily: 'ui-monospace, monospace',
+    cursor: 'pointer',
+    background: 'rgba(107, 136, 107, 0.12)',
+  },
+  rowSentHover: {
+    padding: '6px 8px',
+    borderBottom: '1px solid #333',
+    borderLeft: '3px solid rgba(107, 136, 107, 0.6)',
+    fontFamily: 'ui-monospace, monospace',
+    cursor: 'pointer',
+    background: 'rgba(107, 136, 107, 0.18)',
+  },
+  rowPending: {
+    padding: '6px 8px',
+    borderBottom: '1px solid #333',
+    borderLeft: '3px solid rgba(180, 140, 80, 0.6)',
+    fontFamily: 'ui-monospace, monospace',
+    cursor: 'pointer',
+    background: 'rgba(180, 140, 80, 0.1)',
+  },
+  rowPendingHover: {
+    padding: '6px 8px',
+    borderBottom: '1px solid #333',
+    borderLeft: '3px solid rgba(180, 140, 80, 0.6)',
+    fontFamily: 'ui-monospace, monospace',
+    cursor: 'pointer',
+    background: 'rgba(180, 140, 80, 0.16)',
+  },
+  locatePill: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    marginRight: 8,
+    padding: '2px 6px',
+    borderRadius: 4,
+    background: 'rgba(107, 136, 136, 0.25)',
+    border: '1px solid rgba(107, 136, 136, 0.5)',
+    fontSize: 10,
+    color: '#9ce',
+  },
   time: {
     color: '#8af',
     marginRight: '8px',
@@ -155,8 +203,17 @@ const styles: Record<string, React.CSSProperties> = {
   },
 }
 
-const HIGHLIGHT_DURATION_MS = 2500
-const HIGHLIGHT_STYLE = '2px solid #6b8'
+const HIGHLIGHT_DURATION_MS = 1500
+const HIGHLIGHT_OVERLAY_BG = 'rgba(230, 120, 40, 0.45)'
+
+let currentOverlay: HTMLDivElement | null = null
+
+function removeOverlay(): void {
+  if (currentOverlay && currentOverlay.parentNode) {
+    currentOverlay.parentNode.removeChild(currentOverlay)
+    currentOverlay = null
+  }
+}
 
 function getChronosSourceId(event: AnalyticsEvent): string | undefined {
   const payloadId =
@@ -199,18 +256,39 @@ function highlightSourceElement(sourceId: string): void {
   if (typeof document === 'undefined') return
   const el = findElementByChronosSourceId(sourceId)
   if (!el) return
-  const prevOutline = el.style.outline
-  const prevBoxShadow = el.style.boxShadow
+  removeOverlay()
   el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-  el.style.outline = HIGHLIGHT_STYLE
-  el.style.boxShadow = '0 0 0 2px rgba(107, 136, 136, 0.4)'
-  window.setTimeout(() => {
-    el.style.outline = prevOutline
-    el.style.boxShadow = prevBoxShadow
-  }, HIGHLIGHT_DURATION_MS)
+  const rect = el.getBoundingClientRect()
+  const overlay = document.createElement('div')
+  overlay.setAttribute('data-chronos-highlight-overlay', '')
+  overlay.style.cssText = [
+    'position:fixed',
+    'left:' + rect.left + 'px',
+    'top:' + rect.top + 'px',
+    'width:' + rect.width + 'px',
+    'height:' + rect.height + 'px',
+    'background:' + HIGHLIGHT_OVERLAY_BG,
+    'pointer-events:none',
+    'z-index:2147483646',
+    'border-radius:2px',
+  ].join(';')
+  document.body.appendChild(overlay)
+  currentOverlay = overlay
+  overlay.animate({ opacity: [1, 0] }, { duration: HIGHLIGHT_DURATION_MS, fill: 'forwards', easing: 'ease-out' }).finished.then(() => {
+    if (currentOverlay === overlay && overlay.parentNode) {
+      overlay.parentNode.removeChild(overlay)
+      currentOverlay = null
+    }
+  })
 }
 
-function EventRow({ event }: { event: AnalyticsEvent }): React.ReactElement {
+function EventRow({
+  event,
+  isSent,
+}: {
+  event: AnalyticsEvent
+  isSent: boolean
+}): React.ReactElement {
   const payloadStr =
     typeof event.payload === 'object' && event.payload !== null
       ? JSON.stringify(event.payload)
@@ -229,10 +307,16 @@ function EventRow({ event }: { event: AnalyticsEvent }): React.ReactElement {
     },
     [handleClick]
   )
-  const rowStyle = hover ? styles.rowHover : styles.row
+  const baseStyle = isSent
+    ? hover
+      ? styles.rowSentHover
+      : styles.rowSent
+    : hover
+      ? styles.rowPendingHover
+      : styles.rowPending
   return (
     <div
-      style={rowStyle}
+      style={baseStyle}
       role="button"
       tabIndex={0}
       onClick={handleClick}
@@ -244,8 +328,14 @@ function EventRow({ event }: { event: AnalyticsEvent }): React.ReactElement {
           ? 'Click to highlight the element that emitted this event'
           : 'Event row'
       }
+      title={isSent ? 'Sent to provider' : 'Pending (not yet sent to provider)'}
     >
       <span style={styles.time}>{formatTimestamp(event.timestamp)}</span>
+      {sourceId && (
+        <span style={styles.locatePill} title="Click row to highlight source element">
+          Locate
+        </span>
+      )}
       <span style={styles.name}>{event.eventName}</span>
       <span style={styles.payload} title={payloadStr}>
         {payloadStr}
@@ -263,6 +353,7 @@ function EventRow({ event }: { event: AnalyticsEvent }): React.ReactElement {
 export function ChronosDevTools(): React.ReactElement {
   const [events, setEvents] = useState<AnalyticsEvent[]>(() => loadEvents(STORAGE_KEY))
   const [minimized, setMinimized] = useState(false)
+  const [sentIds, setSentIds] = useState<ReadonlySet<string>>(() => getSentEventIds())
 
   const refresh = useCallback(() => {
     setEvents(loadEvents(STORAGE_KEY))
@@ -278,6 +369,10 @@ export function ChronosDevTools(): React.ReactElement {
       setEvents((prev) => [...prev, event])
     })
     return unsubscribe
+  }, [])
+
+  useEffect(() => {
+    return subscribeToSent(() => setSentIds(getSentEventIds()))
   }, [])
 
   const handleClear = useCallback(() => {
@@ -355,7 +450,11 @@ export function ChronosDevTools(): React.ReactElement {
           </div>
         ) : (
           [...events].reverse().map((evt) => (
-            <EventRow key={evt.id} event={evt} />
+            <EventRow
+              key={evt.id}
+              event={evt}
+              isSent={sentIds.has(evt.id)}
+            />
           ))
         )}
       </div>

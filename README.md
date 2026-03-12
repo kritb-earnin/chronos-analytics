@@ -282,7 +282,7 @@ const TrackedButton = withTracking(Button, 'counter_click')
 
 ### 4. Event log (ChronosDevTools)
 
-Render `ChronosDevTools` to show a minimizable event log (timestamp, event name, payload). Events are loaded from localStorage and updated live. Collapse it to a bubble with an event-count badge.
+Render `ChronosDevTools` to show a minimizable event log (timestamp, event name, payload). Events are loaded from localStorage and updated live. Collapse it to a bubble with an event-count badge. Rows are styled by **sending status**: sent to the provider (e.g. Segment) shows a green tint; pending shows an amber tint. When you use **withTracking**, events carry a source id and the log shows a "Locate" pill—click the row to highlight the DOM element that emitted the event.
 
 ```tsx
 import { ChronosDevTools } from 'chronos-analytics'
@@ -419,7 +419,7 @@ export const segmentChronosAdapter: IAnalyticsProvider = {
 | `createBatchedProviderSink(provider, options)` | Sink that queues events and sends in batches asynchronously; unsent events on unload/offline stored in localStorage and replayed on load/online. Use with `trackBatch` (e.g. Segment batch API) for fewer requests. |
 | `createChronosStore(reducer, initialState)` | Returns `{ ChronosStoreProvider, useChronosStore }`; emits `state_snapshot` on each state change. |
 | `withTracking(Component, eventName?)` | HOC: on click, emit event then call original onClick. |
-| `ChronosDevTools` | Minimizable event log (and bubble with badge). |
+| `ChronosDevTools` | Minimizable event log; row color = sent vs pending to provider; "Locate" on rows with source → click to highlight emitting element. |
 | `ReplayEngine` | Optional; holds events for custom log UIs. |
 
 ---
