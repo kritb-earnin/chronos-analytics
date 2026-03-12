@@ -63,6 +63,13 @@ export interface IAnalyticsProvider {
    * outbound requests and main-thread work.
    */
   trackBatch?(events: TrackPayload[]): void | Promise<void>
+  /**
+   * Optional: send pending events on page unload via navigator.sendBeacon. Chronos
+   * calls this during pagehide with the current queue when serialized size is within
+   * the ~64KB beacon limit; otherwise events are persisted to localStorage for replay.
+   * Must be synchronous. For Segment, consider including messageId in properties for dedupe.
+   */
+  sendBeacon?(payloads: TrackPayload[]): void
   /** Optional: track page/screen view. */
   page?(
     screenName: string,

@@ -366,7 +366,13 @@ Result: All events emitted via `useChronos().emit()` or `withTracking` (and, if 
 
 ### 4. Async sending and unsent events (unload / offline)
 
-Provider sinks always send events **asynchronously** so `EventBus.emit()` never blocks. On **page unload** (navigation, close, refresh) or when the app is **offline**, unsent events are stored in **localStorage** and **replayed** when the app loads again or when the browser goes back online. Use **`createBatchedProviderSink`** for high event volume or when your provider supports batch (e.g. Segment `/v1/batch`).
+Provider sinks always send events **asynchronously** so `EventBus.emit()` never blocks. Chronos uses several mechanisms to avoid losing events on navigation:
+
+1. **Flush on visibility hidden** — When the user switches tabs or minimizes the window, Chronos flushes the queue immediately so normal async sends (e.g. to Segment) have time to complete before the page is torn down.
+2. **Optional sendBeacon on pagehide** — If your provider implements **`sendBeacon(payloads)`**, Chronos calls it during `pagehide` with the pending queue when the serialized payload is within the ~64KB beacon limit. If the payload exceeds 64KB or the provider does not implement `sendBeacon`, events are persisted to localStorage instead.
+3. **localStorage replay** — Any unsent events (e.g. when sendBeacon wasn’t used or failed) are stored in localStorage and replayed when the app loads again or when the browser goes back online.
+
+**Segment note:** Segment’s own library uses persistent queues and optional delays (e.g. `trackLink` / `trackForm`) rather than sendBeacon by default. When integrating Chronos with Segment, you can implement `sendBeacon` to POST to Segment’s API on unload for best-effort delivery; include a stable `messageId` (e.g. Chronos event id) in properties so Segment can deduplicate if the same event is replayed from localStorage. Use **`createBatchedProviderSink`** with **`trackBatch`** for high event volume and fewer requests (e.g. Segment `/v1/batch`).
 
 ```tsx
 import {

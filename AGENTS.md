@@ -92,7 +92,7 @@ flowchart TB
 - **AnalyticsEvent:** `id`, `timestamp`, `eventName`, `payload`, `metadata?`. All events (including state_snapshot) use this shape.
 - **State snapshot:** `eventName === "state_snapshot"`, `payload: { state: unknown }`. Emitted by ChronosStore; provider sinks should skip these. Shown in event log like other events.
 - **EventSink:** `type EventSink = (event: AnalyticsEvent) => void` — contract for `EventBus.subscribe(sink)`.
-- **IAnalyticsProvider:** `track(eventName, properties)`; optional `trackBatch?(events)`, `page?`, `identify?`, `group?`. Implemented by the app (e.g. Segment adapter); Chronos consumes it via `createProviderSink(provider)` or `createBatchedProviderSink(provider)` for async/batch sending.
+- **IAnalyticsProvider:** `track(eventName, properties)`; optional `trackBatch?(events)`, `sendBeacon?(payloads)` (used on pagehide when payload ≤64KB; for Segment, include messageId in properties for dedupe), `page?`, `identify?`, `group?`. Implemented by the app (e.g. Segment adapter); Chronos consumes it via `createProviderSink(provider)` or `createBatchedProviderSink(provider)` for async/batch sending.
 
 ---
 
@@ -113,8 +113,8 @@ flowchart TB
 | **useChronos** | Hook: returns `{ emit(eventName, payload?, metadata?) }`. Uses EventBus singleton. **Primary API** for basic use — no reducer/store. |
 | **ConsoleSink** | `init(eventBus)` — log each event asynchronously (e.g. dev only). |
 | **LocalStorageSink** | `init(eventBus, { key?, maxEvents? })` — append events to localStorage; cap size. |
-| **createProviderSink** | `(provider, options?) => EventSink`. Always async. Skip state_snapshot; forward to `provider.track`. On page unload or offline, unsent events stored in localStorage (option: `unsentEventsStorageKey`); replayed on load/online. Options: `filter`, `mapToTrack`, `unsentEventsStorageKey`. |
-| **createBatchedProviderSink** | `(provider, options?) => EventSink`. Queue and send in batches asynchronously; same unload/offline → localStorage → replay on load/online. Options: same as createProviderSink plus `batchSize`, `flushIntervalMs`, `useIdleCallback`. Use with `trackBatch` (e.g. Segment /v1/batch) for fewer requests. |
+| **createProviderSink** | `(provider, options?) => EventSink`. Always async. Skip state_snapshot; forward to `provider.track`. On `visibilitychange` (hidden) flush queue; on `pagehide`: if `provider.sendBeacon` and payload ≤64KB, call it; else store unsent in localStorage and replay on load/online. Options: `filter`, `mapToTrack`, `unsentEventsStorageKey`. |
+| **createBatchedProviderSink** | `(provider, options?) => EventSink`. Queue and send in batches asynchronously; same visibility flush and pagehide behavior (sendBeacon ≤64KB or localStorage replay). Options: same as createProviderSink plus `batchSize`, `flushIntervalMs`, `useIdleCallback`. Use with `trackBatch` (e.g. Segment /v1/batch) for fewer requests. |
 | **ChronosStore** | (Optional.) `createChronosStore<S, A>(reducer, initialState)` → `{ ChronosStoreProvider, useChronosStore }`. Emit state_snapshot after every state change (events appear in the log). |
 | **withTracking** | HOC: intercept onClick → emit analytics event → call original onClick. |
 | **ReplayEngine** | Holds `AnalyticsEvent[]` for display; `load(events)`, `getEvents()`. Used only if building custom event log UIs. |
@@ -133,7 +133,7 @@ flowchart TB
 - `src/lib/sinks/ConsoleSink.ts`
 - `src/lib/sinks/LocalStorageSink.ts`
 - `src/lib/sinks/index.ts` — barrel: re-exports Console, LocalStorage, createProviderSink, createBatchedProviderSink
-- `src/lib/sinks/utils.ts` — runAsync, scheduleFlush, isOnline, hasWindow, DEFAULT_UNSENT_STORAGE_KEY
+- `src/lib/sinks/utils.ts` — runAsync, scheduleFlush, isOnline, hasWindow, DEFAULT_UNSENT_STORAGE_KEY, SEND_BEACON_MAX_BYTES, getUtf8ByteLength
 - `src/lib/sinks/providerHelpers.ts` — mapEventToTrackPayload, sendToProvider (shared by provider sinks)
 - `src/lib/sinks/unsentEventsStorage.ts` — get/append/clear unsent events in localStorage (unload/offline replay)
 - `src/lib/sinks/providerSentStatus.ts` — track which event IDs have been sent to provider; DevTools uses for row styling; optional sessionStorage persistence

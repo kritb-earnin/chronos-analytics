@@ -1,5 +1,6 @@
 import { ChronosDevTools } from 'chronos-analytics'
 import { Counter } from '@/components/Counter'
+import { HardNavigateDemo } from '@/components/HardNavigateDemo'
 import { TodoList } from '@/components/TodoList'
 
 export default function App(): React.ReactElement {
@@ -31,6 +32,7 @@ export default function App(): React.ReactElement {
             <Counter />
             <TodoList />
           </div>
+          <HardNavigateDemo />
         </div>
       </div>
       <ChronosDevTools />

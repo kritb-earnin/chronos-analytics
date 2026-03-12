@@ -6,6 +6,20 @@
 export const DEFAULT_UNSENT_STORAGE_KEY = 'chronos-unsent-events'
 
 /**
+ * sendBeacon has a ~64KB limit per request. When the serialized payload exceeds this,
+ * Chronos falls back to persisting to localStorage for replay on next load.
+ */
+export const SEND_BEACON_MAX_BYTES = 64 * 1024
+
+/** UTF-8 byte length of a string (for sendBeacon size check). */
+export function getUtf8ByteLength(s: string): number {
+  if (typeof TextEncoder !== 'undefined') {
+    return new TextEncoder().encode(s).length
+  }
+  return s.length
+}
+
+/**
  * Run a function in the next tick (requestIdleCallback when available, else setTimeout(0)).
  * Use so EventBus.emit() does not block on sink work.
  */

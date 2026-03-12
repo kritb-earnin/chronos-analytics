@@ -12,7 +12,14 @@ import {
 import { markSent } from './providerSentStatus'
 import { mapEventToTrackPayload, sendToProvider } from './providerHelpers'
 import type { MapEventToTrackOptions } from './providerHelpers'
-import { DEFAULT_UNSENT_STORAGE_KEY, hasWindow, isOnline, runAsync } from './utils'
+import {
+  DEFAULT_UNSENT_STORAGE_KEY,
+  getUtf8ByteLength,
+  hasWindow,
+  isOnline,
+  runAsync,
+  SEND_BEACON_MAX_BYTES,
+} from './utils'
 
 /** Internal queue item: payload plus Chronos event id for sent-status. */
 type QueuedItem = TrackPayload & { eventId: string }
@@ -73,10 +80,22 @@ export function createProviderSink(
   function persistQueueOnUnload(): void {
     if (queue.length === 0) return
     const items = queue.splice(0, queue.length)
-    appendUnsentEvents(
-      storageKey,
-      items.map(({ eventId: _id, ...p }) => p)
-    )
+    const payloads = items.map(({ eventId: _id, ...p }) => p)
+    if (typeof provider.sendBeacon === 'function') {
+      const size = getUtf8ByteLength(JSON.stringify(payloads))
+      if (size <= SEND_BEACON_MAX_BYTES) {
+        provider.sendBeacon(payloads)
+        markSent(items.map((b) => b.eventId))
+        return
+      }
+    }
+    appendUnsentEvents(storageKey, payloads)
+  }
+
+  function flushOnVisibilityHidden(): void {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      runAsync(drain)
+    }
   }
 
   function replayUnsent(): void {
@@ -89,6 +108,7 @@ export function createProviderSink(
 
   if (hasWindow()) {
     window.addEventListener('pagehide', persistQueueOnUnload)
+    document.addEventListener('visibilitychange', flushOnVisibilityHidden)
     window.addEventListener('online', () => runAsync(replayUnsent))
     runAsync(replayUnsent)
   }
